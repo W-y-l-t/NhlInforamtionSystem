@@ -1,0 +1,13 @@
+DO $$
+BEGIN
+  CREATE ROLE analytic NOLOGIN;
+EXCEPTION WHEN duplicate_object THEN
+  RAISE NOTICE 'Role analytic already exists!';
+END
+$$;
+
+GRANT USAGE ON SCHEMA public TO analytic;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO analytic;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT ON TABLES TO analytic;
