@@ -1,0 +1,7 @@
+FROM haproxy:2.6-alpine
+
+USER root
+
+RUN apk add --no-cache postgresql-client
+
+USER haproxy

@@ -1,0 +1,320 @@
+volumes:
+  etcd1-data:
+  etcd2-data:
+  etcd3-data:
+  patroni1-data:
+  patroni2-data:
+  patroni3-data:
+  grafana_data:
+
+x-etcd-env: &etcd_env
+  ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+  ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+  ETCD_INITIAL_CLUSTER: etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+  ETCD_INITIAL_CLUSTER_STATE: new
+  ETCD_INITIAL_CLUSTER_TOKEN: pgcluster
+  ETCD_ENABLE_V2: "true"
+
+x-patroni-env: &patroni_env
+  PATRONI_SCOPE: wylt
+  PATRONI_NAMESPACE: /service/
+  PATRONI_ETCD_HOSTS: http://etcd1:2379,http://etcd2:2379,http://etcd3:2379
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  PATRONI_SUPERUSER_USERNAME: ${POSTGRES_USER}
+  PATRONI_SUPERUSER_PASSWORD: ${POSTGRES_PASSWORD}
+  PATRONI_REPLICATION_USERNAME: replicator
+  PATRONI_REPLICATION_PASSWORD: replicator
+  PATRONI_LOG_LEVEL: INFO
+
+services:
+  etcd1:
+    image: quay.io/coreos/etcd:v3.5.9
+    hostname: etcd1
+    container_name: etcd1
+    environment:
+      <<: *etcd_env
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd1:2379
+    command: etcd --name etcd1 --initial-advertise-peer-urls http://etcd1:2380
+    volumes:
+      - etcd1-data:/etcd-data
+
+  etcd2:
+    image: quay.io/coreos/etcd:v3.5.9
+    hostname: etcd2
+    container_name: etcd2
+    environment:
+      <<: *etcd_env
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd2:2379
+    command: etcd --name etcd2 --initial-advertise-peer-urls http://etcd2:2380
+    volumes:
+      - etcd2-data:/etcd-data
+
+  etcd3:
+    image: quay.io/coreos/etcd:v3.5.9
+    hostname: etcd3
+    container_name: etcd3
+    environment:
+      <<: *etcd_env
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd3:2379
+    command: etcd --name etcd3 --initial-advertise-peer-urls http://etcd3:2380
+    volumes:
+      - etcd3-data:/etcd-data
+
+  haproxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.haproxy
+    container_name: haproxy
+    hostname: haproxy
+    dns:
+      - 127.0.0.11
+    env_file: patroni.env
+    environment:
+      ETCDCTL_ENDPOINTS: http://etcd1:2379,http://etcd2:2379,http://etcd3:2379
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "5432:5000"
+      - "7000:7000"
+      - "5001:5001"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -h haproxy -p 5000 -U $${PGUSER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    depends_on:
+      patroni1:
+        condition: service_healthy
+      patroni2:
+        condition: service_healthy
+      patroni3:
+        condition: service_healthy
+
+  patroni1:
+    image: patroni
+    container_name: patroni1
+    hostname: patroni1
+    env_file: patroni.env
+    environment:
+      <<: *patroni_env
+      PATRONI_NAME: patroni1
+      PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: patroni1:5432
+      PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
+    volumes:
+      - patroni1-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8008/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    depends_on:
+      - etcd1
+      - etcd2
+      - etcd3
+
+  patroni2:
+    image: patroni
+    container_name: patroni2
+    hostname: patroni2
+    env_file: patroni.env
+    environment:
+      <<: *patroni_env
+      PATRONI_NAME: patroni2
+      PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: patroni2:5432
+      PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
+    volumes:
+      - patroni2-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8008/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    depends_on:
+      - etcd1
+      - etcd2
+      - etcd3
+
+  patroni3:
+    image: patroni
+    container_name: patroni3
+    hostname: patroni3
+    env_file: patroni.env
+    environment:
+      <<: *patroni_env
+      PATRONI_NAME: patroni3
+      PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: patroni3:5432
+      PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
+    volumes:
+      - patroni3-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8008/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    depends_on:
+      - etcd1
+      - etcd2
+      - etcd3
+
+  nhl_migrator:
+    image: flyway/flyway:10-alpine
+    container_name: nhl_migrator
+    env_file: .env
+    command: >
+      -connectRetries=60
+      -url=jdbc:postgresql://haproxy:5001/${POSTGRES_DB}
+      -user=${POSTGRES_USER}
+      -password=${POSTGRES_PASSWORD}
+      -locations=filesystem:/flyway/sql
+      migrate
+    volumes:
+      - ./migrations:/flyway/sql:ro
+    depends_on:
+      haproxy:
+        condition: service_healthy
+
+  nhl_seeder:
+    build:
+      context: ./seed
+    container_name: nhl_seeder
+    profiles: ["benchmark"]
+    env_file: .env
+    restart: "no"
+    depends_on:
+      haproxy:
+        condition: service_healthy
+      nhl_migrator:
+        condition: service_completed_successfully
+
+  nhl_init_roles:
+    image: postgres:17.4-alpine
+    container_name: nhl_init_roles
+    profiles: ["init"]
+    env_file: .env
+    restart: "no"
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    entrypoint:
+      - sh
+      - -c
+      - |
+        sed -i 's/\r$//' /scripts/init/01_create_analysts.sh
+        psql -h haproxy -p 5001 -U $POSTGRES_USER -d $POSTGRES_DB -f /scripts/init/00_create_analytic_role.sql
+        sh /scripts/init/01_create_analysts.sh
+    volumes:
+      - ./scripts/init:/scripts/init
+    depends_on:
+      haproxy:
+        condition: service_healthy
+
+  nhl_backend:
+    container_name: nhl_backend
+    build:
+      context: ../NhlBackend
+      dockerfile: NhlBackend/Dockerfile
+    profiles: ["benchmark"]
+    restart: unless-stopped
+    ports:
+      - "5888:80"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:80/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    environment:
+      ASPNETCORE_URLS: http://0.0.0.0:80
+      ConnectionStrings__NhlDatabase: Host=haproxy;Port=5001;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+    depends_on:
+      haproxy:
+        condition: service_healthy
+      nhl_seeder:
+        condition: service_completed_successfully
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: prometheus
+    profiles: ["benchmark"]
+    volumes:
+      - ./monitor/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --enable-feature=remote-write-receiver
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/-/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+    depends_on:
+      nhl_backend:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: grafana
+    profiles: ["benchmark"]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./monitor/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./monitor/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitor/grafana/dashboards:/var/lib/grafana/dashboards
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  loadgen:
+    image: grafana/k6:0.52.0
+    profiles: ["benchmark"]
+    command:
+      - run
+      - --out
+      - experimental-prometheus-rw=http://prometheus:9090
+      - /scripts/load.js
+    environment:
+      K6_PROMETHEUS_RW_SERVER_URL: http://prometheus:9090/api/v1/write
+      K6_PROMETHEUS_RW_PUSH_INTERVAL: 15s
+    volumes:
+      - ./k6:/scripts
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      nhl_seeder:
+        condition: service_completed_successfully
+
+  db_backup:
+    image: postgres:17.4-alpine
+    container_name: db_backup
+    depends_on:
+      haproxy:
+        condition: service_healthy
+    env_file: .env
+    volumes:
+      - ./backup/backup.sh:/usr/local/bin/backup.sh
+      - ./backup/pgpass:/root/.pgpass
+      - ./backups:/backups
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        chmod 600 /root/.pgpass
+        echo "${BACKUP_INTERVAL_CRON} /usr/local/bin/backup.sh >>/var/log/backup.log 2>&1" | crontab -
+        exec crond -f -l 2

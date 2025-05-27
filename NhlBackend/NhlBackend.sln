@@ -1,0 +1,16 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NhlBackend", "NhlBackend\NhlBackend.csproj", "{CF7804D5-9CF8-4F3C-8CCE-D22EFF214A54}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CF7804D5-9CF8-4F3C-8CCE-D22EFF214A54}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CF7804D5-9CF8-4F3C-8CCE-D22EFF214A54}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CF7804D5-9CF8-4F3C-8CCE-D22EFF214A54}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CF7804D5-9CF8-4F3C-8CCE-D22EFF214A54}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

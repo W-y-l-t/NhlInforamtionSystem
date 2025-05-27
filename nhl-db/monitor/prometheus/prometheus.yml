@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: nhl-backend
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["nhl_backend:80"]
+  
+  - job_name: k6
+    static_configs:
+      - targets: ["loadgen:5667"]
